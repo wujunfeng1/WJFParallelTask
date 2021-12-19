@@ -5,6 +5,7 @@ using Distributed
 @everywhere function mapPrefix(loopStart::T1, loopEnd::T1, batchSize::T1,
     mapFun::Function, blockPrefixFun::Function,
     data::T2,
+    copyData::Bool = false,
     )::T2 where {T1<:Integer, T2<:Vector}
     numWorkers = length(workers())
     jobs = RemoteChannel(() -> Channel{Tuple{T1,T1,T2}}(numWorkers))
@@ -13,7 +14,11 @@ using Distributed
     function makeJobs()
         for i::T1 = loopStart:batchSize:loopEnd
             iEnd = min(i + batchSize - 1, loopEnd)
-            put!(jobs, (i, iEnd, data[i:iEnd]))
+            if copyData
+                put!(jobs, (i, iEnd, data))
+            else
+                put!(jobs, (i, iEnd, data[i:iEnd]))
+            end
         end
         for idxWorker = 1:numWorkers
             put!(jobs, (loopEnd,loopEnd,T2()))
@@ -51,7 +56,8 @@ end
 
 @everywhere function mapReduce(loopStart::T1, loopEnd::T1, batchSize::T1,
     mapFun::Function, reduceFun::Function,
-    data::T2, outData0::T3
+    data::T2, outData0::T3,
+    copyData::Bool = false,
     )::T3 where {T1<:Integer, T2<:Vector, T3<:Any}
     numWorkers = length(workers())
     jobs = RemoteChannel(() -> Channel{Tuple{T1,T1,T2}}(numWorkers))
@@ -60,7 +66,11 @@ end
     function makeJobs()
         for i::T1 = loopStart:batchSize:loopEnd
             iEnd = min(i + batchSize - 1, loopEnd)
-            put!(jobs, (i, iEnd, data[i:iEnd]))
+            if copyData
+                put!(jobs, (i, iEnd, data))
+            else
+                put!(jobs, (i, iEnd, data[i:iEnd]))
+            end
         end
         for idxWorker = 1:numWorkers
             put!(jobs, (loopEnd,loopEnd,T2()))
