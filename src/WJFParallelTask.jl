@@ -5,8 +5,12 @@ using Distributed
 @everywhere function mapPrefix(data::T2, batchSize::Int,
     mapFun::Function, blockPrefixFun::Function;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
+    attachments::Vector = [],
     copyData::Bool = false,
     )::T2 where {T2<:Vector}
+    if length(attachments) > 0
+        @assert length(attachments) == length(data)
+    end
     numWorkers = length(workers())
     jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T2,Dict{String,Any}}}(numWorkers))
     jobOutputs = RemoteChannel(() -> Channel{Vector{Tuple{Int,Int,T2}}}(numWorkers))
@@ -14,11 +18,20 @@ using Distributed
     function makeJobs()
         for i = 1:batchSize:length(data)
             iEnd = min(i + batchSize - 1, length(data))
-            if copyData
-                put!(jobs, (i, iEnd, data, globalStates))
+            segment = if copyData
+                if length(attachments) == length(data)
+                    [(data[j],attachments[j]) for j in 1:length(data)]
+                else
+                    data
+                end
             else
-                put!(jobs, (i, iEnd, data[i:iEnd], globalStates))
+                if length(attachments) == length(data)
+                    [(data[j],attachments[j]) for j in i:iEnd]
+                else
+                    data[i:iEnd]
+                end
             end
+            put!(jobs, (i, iEnd, segment, globalStates))
         end
         for idxWorker = 1:numWorkers
             put!(jobs, (0,0,T2(),Dict{String,Any}()))
@@ -57,9 +70,14 @@ end
 
 @everywhere function mapReduce(data::T2, batchSize::Int,
     mapFun::Function, reduceFun::Function,
-    outData0::T3; globalStates::Dict{String,Any} = Dict{String,Any}(),
+    outData0::T3;
+    globalStates::Dict{String,Any} = Dict{String,Any}(),
+    attachments::Vector = [],
     copyData::Bool = false,
     )::T3 where {T2<:Vector, T3<:Any}
+    if length(attachments) > 0
+        @assert length(attachments) == length(data)
+    end
     numWorkers = length(workers())
     jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T2,Dict{String,Any}}}(numWorkers))
     jobOutputs = RemoteChannel(() -> Channel{T3}(numWorkers))
@@ -67,11 +85,20 @@ end
     function makeJobs()
         for i = 1:batchSize:length(data)
             iEnd = min(i + batchSize - 1, length(data))
-            if copyData
-                put!(jobs, (i, iEnd, data, globalStates))
+            segment = if copyData
+                if length(attachments) == length(data)
+                    [(data[j],attachments[j]) for j in 1:length(data)]
+                else
+                    data
+                end
             else
-                put!(jobs, (i, iEnd, data[i:iEnd], globalStates))
+                if length(attachments) == length(data)
+                    [(data[j],attachments[j]) for j in i:iEnd]
+                else
+                    data[i:iEnd]
+                end
             end
+            put!(jobs, (i, iEnd, segment, globalStates))
         end
         for idxWorker = 1:numWorkers
             put!(jobs, (0,0,T2(),Dict{String,Any}()))
