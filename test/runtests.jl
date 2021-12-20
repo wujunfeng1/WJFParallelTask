@@ -1,61 +1,45 @@
 using Test
-using WJFParallelTask
+ include("../src/WJFParallelTask.jl")
 
-@testset "map prefix" begin
-    a = Float64[i for i = 1:4000000]
-    @everywhere function mapFun(i1, i2, segment::Vector{Float64}, globalStates::Dict{String,Any})
-        result = copy(segment)
-        for j = 2:length(result)
-            result[j] += result[j - 1]
-        end
-        return result
-    end
-    @everywhere function mapFun1(i1, i2, data::Vector{Float64}, globalStates::Dict{String,Any})
-        result = copy(data[i1:i2])
-        for j = 2:length(result)
-            result[j] += result[j - 1]
-        end
-        return result
-    end
-    @everywhere function blockPrefixFun(x0::Float64, xs::Vector{Float64})
-        result = Vector{Float64}(undef, length(xs))
-        for i = 1:length(xs)
-            result[i] = xs[i] + x0
-        end
-        return result
-    end
-    @everywhere function mapFun2(i1, i2, segment::Vector{Tuple{Float64,Float64}}, globalStates::Dict{String,Any})
-        result = 0.0
-        for item in segment
-            result += item[1]
-        end
-        return result
-    end
-    @everywhere function mapFun3(i1, i2, data::Vector{Tuple{Float64,Float64}}, globalStates::Dict{String,Any})
-        result = 0.0
-        for item in data[i1:i2]
-            result += item[1]
-        end
-        return result
-    end
-    function reduceFun(xs::Vector{Float64})
-        return sum(xs)
-    end
-    aResult = Vector{Float64}(undef, length(a))
-    aResult[1] = a[1]
-    for i = 2:length(a)
-        aResult[i] = aResult[i-1] + a[i]
-    end
-    @time b = mapPrefix(a, 1000, mapFun, blockPrefixFun, 0.0)
-    err = sum(abs.(aResult .- b))
-    println("err = $err")
-    @time b1 = mapPrefix(a, 1000, mapFun1, blockPrefixFun, 0.0, copyData=true)
-    err1 = sum(abs.(aResult .- b1))
-    println("err1 = $err1")
-    @time c = mapReduce(a, 1000, mapFun2, reduceFun, 0.0, attachments=a)
-    @time c1 = mapReduce(a, 1000, mapFun3, reduceFun, 0.0, attachments=a, copyData=true)
-    @test err ≈ 0
-    @test err1 ≈ 0
-    @test c ≈ aResult[end]
-    @test c1 ≈ aResult[end]
-end
+ @testset "map prefix" begin
+     a = Float64[i for i = 1:10000]
+     function mapFun(i1, i2)
+         result = Float64[a[i] for i = i1:i2]
+         for j = 2:length(result)
+             result[j] += result[j - 1]
+         end
+         return result
+     end
+     function blockPrefixFun(x0::Float64, xs::Vector{Float64})
+         result = Vector{Float64}(undef, length(xs))
+         for i = 1:length(xs)
+             result[i] = xs[i] + x0
+         end
+         return result
+     end
+     function mapFun2(i1, i2)
+         return sum(a[i1:i2])
+     end
+     function reduceFun(xs::Vector{Float64})
+         return sum(xs)
+     end
+     b = WJFParallelTask.mapPrefix(
+         1,length(a),10, mapFun, blockPrefixFun, Float64[10])
+     c = WJFParallelTask.mapReduce(
+         1,length(a),10, mapFun2, reduceFun, 10.0
+     )
+     aResult = Vector{Float64}(undef, length(a) + 1)
+     aResult[1] = 10
+     function loopBody(i1, i2)
+         for i = i1:i2
+             aResult[i + 1] = aResult[1] + sum(1:i)
+         end
+     end
+     WJFParallelTask.mapOnly(
+         1,length(a),10,loopBody
+     )
+     err = sum(abs.(aResult .- b))
+     println("err = $err")
+     @test err ≈ 0
+     @test c ≈ aResult[end]
+ end

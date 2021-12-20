@@ -1,76 +1,52 @@
 module WJFParallelTask
-export mapPrefix, mapReduce
-using Distributed
+export mapPrefix, mapReduce, mapOnly
 
-function mapPrefix(data::Vector{T1}, batchSize::Int,
-    mapFun::Function, blockPrefixFun::Function,
-    outData0::T2;
-    globalStates::Dict{String,Any} = Dict{String,Any}(),
-    attachments::Vector{T3} = [],
-    copyData::Bool = false,
-    )::Vector{T2} where {T1<:Any,T2<:Any,T3<:Any}
-    if length(attachments) > 0
-        @assert length(attachments) == length(data)
-    end
-    numWorkers = length(workers())
-    jobs = if length(attachments) > 0
-            RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Vector{Tuple{T1,T3}},Dict{String,Any}}}(numWorkers))
-        else
-            RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Vector{T1},Dict{String,Any}}}(numWorkers))
-        end
-    jobOutputs = RemoteChannel(() ->
-        Channel{Vector{Tuple{Int,Int,Vector{T2}}}}(numWorkers))
+function mapPrefix(
+    loopStart::T1,
+    loopEnd::T1,
+    batchSize::T1,
+    mapFun::Function,
+    blockPrefixFun::Function,
+    initialResult::T2,
+    parallel::Bool = true,
+)::T2 where {T1<:Integer,T2<:Vector}
+    numCPUs = length(Sys.cpu_info())
+    jobs = Channel{Tuple{T1,T1}}(numCPUs)
+    jobOutputs = Channel{Vector{Tuple{T1,T1,T2}}}(numCPUs)
 
     function makeJobs()
-        for i = 1:batchSize:length(data)
-            iEnd = min(i + batchSize - 1, length(data))
-            segment = if copyData
-                if length(attachments) == length(data)
-                    [(data[j],attachments[j]) for j in 1:length(data)]
-                else
-                    data
-                end
-            else
-                if length(attachments) == length(data)
-                    [(data[j],attachments[j]) for j in i:iEnd]
-                else
-                    data[i:iEnd]
-                end
-            end
-            put!(jobs, (i, iEnd, segment, globalStates))
-        end
-        for idxWorker = 1:numWorkers
-            put!(jobs, (0,0,T1[],Dict{String,Any}()))
+        for i::T1 = loopStart:batchSize:loopEnd
+            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
         end
     end
 
-    errormonitor(@async makeJobs())
-    for p in workers()
-        remote_do((jobs, jobOutputs) -> begin
-            localResult::Vector{Tuple{Int,Int,Vector{T2}}} =
-                Vector{Tuple{Int,Int,Vector{T2}}}()
-            job = take!(jobs)
-            while length(job[3]) > 0
-                push!(localResult, (job[1], job[2],
-                    mapFun(job[1], job[2], job[3], job[4])))
-                job = take!(jobs)
-            end
-            put!(jobOutputs, localResult)
-        end, p, jobs, jobOutputs)
+    function runJob(iCPU::Int)
+        localResult::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
+        for job in jobs
+            push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
+        end # job
+        put!(jobOutputs, localResult)
+        sleep(0.001)
+    end # runJob
+
+    bind(jobs, @async makeJobs())
+    for iCPU = 1:numCPUs
+        if parallel
+            Threads.@spawn runJob(iCPU)
+        else
+            runJob(iCPU)
+        end
     end
 
-    localResults::Vector{Tuple{Int,Int,Vector{T2}}} =
-        Vector{Tuple{Int,Int,Vector{T2}}}()
-    for idxWorker = 1:numWorkers
+    localResults::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
+    for iCPU = 1:numCPUs
         append!(localResults, take!(jobOutputs))
     end
-    sort!(localResults, by=x->x[1])
-    result = T2[]
+    sort!(localResults, by = x -> x[1])
+    result = initialResult
     for block in localResults
         if length(result) == 0
-            append!(result, blockPrefixFun(outData0,block[3]))
+            append!(result, block[3])
         else
             append!(result, blockPrefixFun(result[end], block[3]))
         end
@@ -78,67 +54,87 @@ function mapPrefix(data::Vector{T1}, batchSize::Int,
     return result
 end
 
-function mapReduce(data::Vector{T1}, batchSize::Int,
-    mapFun::Function, reduceFun::Function,
-    outData0::T2;
-    globalStates::Dict{String,Any} = Dict{String,Any}(),
-    attachments::Vector{T3} = [],
-    copyData::Bool = false,
-    )::T2 where {T1<:Any, T2<:Any, T3<:Any}
-    if length(attachments) > 0
-        @assert length(attachments) == length(data)
-    end
-    numWorkers = length(workers())
-    jobs = if length(attachments) > 0
-            RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Vector{Tuple{T1,T3}},Dict{String,Any}}}(numWorkers))
-        else
-            RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Vector{T1},Dict{String,Any}}}(numWorkers))
-        end
-    jobOutputs = RemoteChannel(() -> Channel{T2}(numWorkers))
+function mapReduce(
+    loopStart::T1,
+    loopEnd::T1,
+    batchSize::T1,
+    mapFun::Function,
+    reduceFun::Function,
+    x0::T2,
+    parallel::Bool = true,
+)::T2 where {T1<:Integer,T2<:Any}
+    numCPUs = length(Sys.cpu_info())
+    jobs = Channel{Tuple{T1,T1}}(numCPUs)
+    jobOutputs = Channel{T2}(numCPUs)
 
     function makeJobs()
-        for i = 1:batchSize:length(data)
-            iEnd = min(i + batchSize - 1, length(data))
-            segment = if copyData
-                if length(attachments) == length(data)
-                    [(data[j],attachments[j]) for j in 1:length(data)]
-                else
-                    data
-                end
-            else
-                if length(attachments) == length(data)
-                    [(data[j],attachments[j]) for j in i:iEnd]
-                else
-                    data[i:iEnd]
-                end
-            end
-            put!(jobs, (i, iEnd, segment, globalStates))
-        end
-        for idxWorker = 1:numWorkers
-            put!(jobs, (0,0,T1[],Dict{String,Any}()))
+        for i::T1 = loopStart:batchSize:loopEnd
+            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
         end
     end
 
-    errormonitor(@async makeJobs())
-    for p in workers()
-        remote_do((jobs, jobOutputs) -> begin
-            localResult::Vector{T2} = Vector{T2}()
-            job = take!(jobs)
-            while length(job[3]) > 0
-                push!(localResult, mapFun(job[1], job[2], job[3], job[4]))
-                job = take!(jobs)
-            end
-            put!(jobOutputs, reduceFun(localResult))
-        end, p, jobs, jobOutputs)
+    function runJob(iCPU::Int)
+        localResult::Vector{T2} = Vector{T2}()
+        for job in jobs
+            push!(localResult, mapFun(job[1], job[2]))
+        end # job
+        put!(jobOutputs, reduceFun(localResult))
+        sleep(0.001)
+    end # runJob
+
+    bind(jobs, @async makeJobs())
+    for iCPU = 1:numCPUs
+        if parallel
+            Threads.@spawn runJob(iCPU)
+        else
+            runJob(iCPU)
+        end
     end
 
-    localResults = T2[outData0]
-    for idxWorker = 1:numWorkers
+    localResults = T2[x0]
+    for iCPU = 1:numCPUs
         push!(localResults, take!(jobOutputs))
     end
     return reduceFun(localResults)
+end
+
+function mapOnly(
+    loopStart::T1,
+    loopEnd::T1,
+    batchSize::T1,
+    mapFun::Function,
+    parallel::Bool = true,
+) where {T1<:Integer}
+    numCPUs = length(Sys.cpu_info())
+    jobs = Channel{Tuple{T1,T1}}(numCPUs)
+    jobOutputs = Channel{Bool}(numCPUs)
+
+    function makeJobs()
+        for i::T1 = loopStart:batchSize:loopEnd
+            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+        end
+    end
+
+    function runJob(iCPU::Int)
+        for job in jobs
+            mapFun(job[1], job[2])
+        end # job
+        put!(jobOutputs, true)
+        sleep(0.001)
+    end # runJob
+
+    bind(jobs, @async makeJobs())
+    for iCPU = 1:numCPUs
+        if parallel
+            Threads.@spawn runJob(iCPU)
+        else
+            runJob(iCPU)
+        end
+    end
+
+    for iCPU = 1:numCPUs
+        take!(jobOutputs)
+    end
 end
 
 end # module
