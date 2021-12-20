@@ -10,7 +10,7 @@ function mapPrefix(
     initialResult::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Vector}
-    numCPUs = length(Sys.cpu_info())
+    numCPUs = 2 * length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{Vector{Tuple{T1,T1,T2}}}(numCPUs)
 
@@ -66,7 +66,7 @@ function mapReduce(
     x0::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Any}
-    numCPUs = length(Sys.cpu_info())
+    numCPUs = 2 * length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{T2}(numCPUs)
 
@@ -111,7 +111,7 @@ function mapOnly(
     mapFun::Function,
     parallel::Bool = true,
 ) where {T1<:Integer}
-    numCPUs = length(Sys.cpu_info())
+    numCPUs = 2 * length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{Bool}(numCPUs)
 
