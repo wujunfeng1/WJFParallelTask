@@ -26,7 +26,7 @@ function mapPrefix(
             push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
         end # job
         put!(jobOutputs, localResult)
-        numYields = iCPU+rand(Int)%10
+        numYields = rand(Int)%10
         for i in 1:numYields
             yield()
         end
@@ -82,7 +82,7 @@ function mapReduce(
             push!(localResult, mapFun(job[1], job[2]))
         end # job
         put!(jobOutputs, reduceFun(localResult))
-        numYields = iCPU+rand(Int)%10
+        numYields = rand(Int)%10
         for i in 1:numYields
             yield()
         end
@@ -126,7 +126,7 @@ function mapOnly(
             mapFun(job[1], job[2])
         end # job
         put!(jobOutputs, true)
-        numYields = iCPU+rand(Int)%10
+        numYields = rand(Int)%10
         for i in 1:numYields
             yield()
         end
