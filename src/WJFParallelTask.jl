@@ -13,8 +13,13 @@ function mapPrefix(data::T1, batchSize::Int,
         @assert length(attachments) == length(data)
     end
     numWorkers = length(workers())
-    jobs = RemoteChannel(() ->
-        Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+    jobs = if length(attachment) > 0
+            RemoteChannel(() ->
+            Channel{Tuple{Int,Int,Tuple{T1,Any},Dict{String,Any}}}(numWorkers))
+        else
+            RemoteChannel(() ->
+            Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+        end
     jobOutputs = RemoteChannel(() ->
         Channel{Vector{Tuple{Int,Int,Vector{T2}}}}(numWorkers))
 
@@ -84,7 +89,13 @@ function mapReduce(data::T1, batchSize::Int,
         @assert length(attachments) == length(data)
     end
     numWorkers = length(workers())
-    jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+    jobs = if length(attachment) > 0
+            RemoteChannel(() ->
+            Channel{Tuple{Int,Int,Tuple{T1,Any},Dict{String,Any}}}(numWorkers))
+        else
+            RemoteChannel(() ->
+            Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+        end
     jobOutputs = RemoteChannel(() -> Channel{T2}(numWorkers))
 
     function makeJobs()
