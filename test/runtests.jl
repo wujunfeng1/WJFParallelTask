@@ -1,5 +1,5 @@
 using Test
-include("../src/WJFParallelTask.jl")
+using WJFParallelTask
 
 @testset "map prefix" begin
     a = Float64[i for i = 1:4000000]

@@ -2,7 +2,7 @@ module WJFParallelTask
 export mapPrefix, mapReduce
 using Distributed
 
-@everywhere function mapPrefix(data::T2, batchSize::Int,
+function mapPrefix(data::T2, batchSize::Int,
     mapFun::Function, blockPrefixFun::Function;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
     attachments::Vector = [],
@@ -68,7 +68,7 @@ using Distributed
     return result
 end
 
-@everywhere function mapReduce(data::T2, batchSize::Int,
+function mapReduce(data::T2, batchSize::Int,
     mapFun::Function, reduceFun::Function,
     outData0::T3;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
