@@ -2,23 +2,23 @@ module WJFParallelTask
 export mapPrefix, mapReduce
 using Distributed
 
-function mapPrefix(data::T1, batchSize::Int,
+function mapPrefix(data::Vector{T1}, batchSize::Int,
     mapFun::Function, blockPrefixFun::Function,
     outData0::T2;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
-    attachments::Vector = [],
+    attachments::Vector{T3} = [],
     copyData::Bool = false,
-    )::Vector{T2} where {T1<:Vector,T2<:Any}
+    )::Vector{T2} where {T1<:Any,T2<:Any,T3<:Any}
     if length(attachments) > 0
         @assert length(attachments) == length(data)
     end
     numWorkers = length(workers())
     jobs = if length(attachments) > 0
             RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Tuple{T1,Any},Dict{String,Any}}}(numWorkers))
+            Channel{Tuple{Int,Int,Vector{Tuple{T1,T3}},Dict{String,Any}}}(numWorkers))
         else
             RemoteChannel(() ->
-            Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+            Channel{Tuple{Int,Int,Vector{T1},Dict{String,Any}}}(numWorkers))
         end
     jobOutputs = RemoteChannel(() ->
         Channel{Vector{Tuple{Int,Int,Vector{T2}}}}(numWorkers))
@@ -42,7 +42,7 @@ function mapPrefix(data::T1, batchSize::Int,
             put!(jobs, (i, iEnd, segment, globalStates))
         end
         for idxWorker = 1:numWorkers
-            put!(jobs, (0,0,T1(),Dict{String,Any}()))
+            put!(jobs, (0,0,T1[],Dict{String,Any}()))
         end
     end
 
