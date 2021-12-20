@@ -12,7 +12,10 @@ function mapPrefix(
 )::T2 where {T1<:Integer,T2<:Vector}
     numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = Channel{Vector{Tuple{T1,T1,T2}}}(numCPUs)
+    jobOutputs = Vector{Union{Vector{Tuple{T1,T1,T2}},Nothing}}(undef, numCPUs)
+    for i in 1:numCPUs
+        jobOutputs[i] = nothing
+    end
 
     function makeJobs()
         for i::T1 = loopStart:batchSize:loopEnd
@@ -25,10 +28,7 @@ function mapPrefix(
         for job in jobs
             push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
         end # job
-        put!(jobOutputs, localResult)
-        for i in 1:iCPU
-            yield()
-        end
+        jobOutputs[iCPU] = localResult
     end # runJob
 
     bind(jobs, @async makeJobs())
@@ -42,8 +42,10 @@ function mapPrefix(
 
     localResults::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
     for iCPU = 1:numCPUs
-        append!(localResults, take!(jobOutputs))
-        yield()
+        while jobOutputs[iCPU] == nothing
+            yield()
+        end
+        append!(localResults, jobOutputs[iCPU])
     end
     sort!(localResults, by = x -> x[1])
     result = initialResult
@@ -68,7 +70,10 @@ function mapReduce(
 )::T2 where {T1<:Integer,T2<:Any}
     numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = Channel{T2}(numCPUs)
+    jobOutputs = Vector{Union{T2,Nothing}}(undef, numCPUs)
+    for i in 1:numCPUs
+        jobOutputs[i] = nothing
+    end
 
     function makeJobs()
         for i::T1 = loopStart:batchSize:loopEnd
@@ -81,10 +86,7 @@ function mapReduce(
         for job in jobs
             push!(localResult, mapFun(job[1], job[2]))
         end # job
-        put!(jobOutputs, reduceFun(localResult))
-        for i in 1:iCPU
-            yield()
-        end
+        jobOutputs[iCPU] = reduceFun(localResult)
     end # runJob
 
     bind(jobs, @async makeJobs())
@@ -98,8 +100,10 @@ function mapReduce(
 
     localResults = T2[x0]
     for iCPU = 1:numCPUs
-        push!(localResults, take!(jobOutputs))
-        yield()
+        while jobOutputs[iCPU] == nothing
+            yield()
+        end
+        push!(localResults, jobOutputs[iCPU])
     end
     return reduceFun(localResults)
 end
@@ -113,7 +117,7 @@ function mapOnly(
 ) where {T1<:Integer}
     numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = Channel{Bool}(numCPUs)
+    jobOutputs = fill(false, numCPUs)
 
     function makeJobs()
         for i::T1 = loopStart:batchSize:loopEnd
@@ -125,10 +129,7 @@ function mapOnly(
         for job in jobs
             mapFun(job[1], job[2])
         end # job
-        put!(jobOutputs, true)
-        for i in 1:iCPU
-            yield()
-        end
+        jobOutputs[iCPU] = true
     end # runJob
 
     bind(jobs, @async makeJobs())
@@ -141,8 +142,9 @@ function mapOnly(
     end
 
     for iCPU = 1:numCPUs
-        take!(jobOutputs)
-        yield()
+        while jobOutputs[iCPU] == false
+            yield()
+        end
     end
 end
 
