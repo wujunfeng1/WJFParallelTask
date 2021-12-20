@@ -26,8 +26,7 @@ function mapPrefix(
             push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
         end # job
         put!(jobOutputs, localResult)
-        numYields = iCPU+rand(Int)%10
-        for i in 1:numYields
+        for i in 1:iCPU
             yield()
         end
     end # runJob
@@ -44,6 +43,7 @@ function mapPrefix(
     localResults::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
     for iCPU = 1:numCPUs
         append!(localResults, take!(jobOutputs))
+        yield()
     end
     sort!(localResults, by = x -> x[1])
     result = initialResult
@@ -82,8 +82,7 @@ function mapReduce(
             push!(localResult, mapFun(job[1], job[2]))
         end # job
         put!(jobOutputs, reduceFun(localResult))
-        numYields = iCPU+rand(Int)%10
-        for i in 1:numYields
+        for i in 1:iCPU
             yield()
         end
     end # runJob
@@ -100,6 +99,7 @@ function mapReduce(
     localResults = T2[x0]
     for iCPU = 1:numCPUs
         push!(localResults, take!(jobOutputs))
+        yield()
     end
     return reduceFun(localResults)
 end
@@ -126,8 +126,7 @@ function mapOnly(
             mapFun(job[1], job[2])
         end # job
         put!(jobOutputs, true)
-        numYields = iCPU+rand(Int)%10
-        for i in 1:numYields
+        for i in 1:iCPU
             yield()
         end
     end # runJob
@@ -143,6 +142,7 @@ function mapOnly(
 
     for iCPU = 1:numCPUs
         take!(jobOutputs)
+        yield()
     end
 end
 
