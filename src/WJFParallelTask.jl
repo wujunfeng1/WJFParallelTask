@@ -126,6 +126,7 @@ function mapReduce(data::Vector{T1}, batchSize::Int,
         remote_do((jobs, jobOutputs) -> begin
             localResult::Vector{T2} = Vector{T2}()
             job = take!(jobs)
+            println("$(job[1]),$(job[2])")
             while length(job[3]) > 0
                 push!(localResult, mapFun(job[1], job[2], job[3], job[4]))
                 job = take!(jobs)
