@@ -2,18 +2,21 @@ module WJFParallelTask
 export mapPrefix, mapReduce
 using Distributed
 
-function mapPrefix(data::T2, batchSize::Int,
-    mapFun::Function, blockPrefixFun::Function;
+function mapPrefix(data::T1, batchSize::Int,
+    mapFun::Function, blockPrefixFun::Function,
+    outData0::T2;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
     attachments::Vector = [],
     copyData::Bool = false,
-    )::T2 where {T2<:Vector}
+    )::T2 where {T1<:Vector,T2<:Any}
     if length(attachments) > 0
         @assert length(attachments) == length(data)
     end
     numWorkers = length(workers())
-    jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T2,Dict{String,Any}}}(numWorkers))
-    jobOutputs = RemoteChannel(() -> Channel{Vector{Tuple{Int,Int,T2}}}(numWorkers))
+    jobs = RemoteChannel(() ->
+        Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+    jobOutputs = RemoteChannel(() ->
+        Channel{Vector{Tuple{Int,Int,Vector{T2}}}}(numWorkers))
 
     function makeJobs()
         for i = 1:batchSize:length(data)
@@ -34,14 +37,15 @@ function mapPrefix(data::T2, batchSize::Int,
             put!(jobs, (i, iEnd, segment, globalStates))
         end
         for idxWorker = 1:numWorkers
-            put!(jobs, (0,0,T2(),Dict{String,Any}()))
+            put!(jobs, (0,0,T1(),Dict{String,Any}()))
         end
     end
 
     errormonitor(@async makeJobs())
     for p in workers()
         remote_do((jobs, jobOutputs) -> begin
-            localResult::Vector{Tuple{Int,Int,T2}} = Vector{Tuple{Int,Int,T2}}()
+            localResult::Vector{Tuple{Int,Int,Vector{T2}}} =
+                Vector{Tuple{Int,Int,Vector{T2}}}()
             job = take!(jobs)
             while length(job[3]) > 0
                 push!(localResult, (job[1], job[2],
@@ -52,15 +56,16 @@ function mapPrefix(data::T2, batchSize::Int,
         end, p, jobs, jobOutputs)
     end
 
-    localResults::Vector{Tuple{Int,Int,T2}} = Vector{Tuple{Int,Int,T2}}()
+    localResults::Vector{Tuple{Int,Int,Vector{T2}}} =
+        Vector{Tuple{Int,Int,Vector{T2}}}()
     for idxWorker = 1:numWorkers
         append!(localResults, take!(jobOutputs))
     end
     sort!(localResults, by=x->x[1])
-    result = T2()
+    result = T2[]
     for block in localResults
         if length(result) == 0
-            append!(result, block[3])
+            append!(result, blockPrefixFun(outputData0,block[3]))
         else
             append!(result, blockPrefixFun(result[end], block[3]))
         end
@@ -68,19 +73,19 @@ function mapPrefix(data::T2, batchSize::Int,
     return result
 end
 
-function mapReduce(data::T2, batchSize::Int,
+function mapReduce(data::T1, batchSize::Int,
     mapFun::Function, reduceFun::Function,
-    outData0::T3;
+    outData0::T2;
     globalStates::Dict{String,Any} = Dict{String,Any}(),
     attachments::Vector = [],
     copyData::Bool = false,
-    )::T3 where {T2<:Vector, T3<:Any}
+    )::T2 where {T1<:Vector, T2<:Any}
     if length(attachments) > 0
         @assert length(attachments) == length(data)
     end
     numWorkers = length(workers())
-    jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T2,Dict{String,Any}}}(numWorkers))
-    jobOutputs = RemoteChannel(() -> Channel{T3}(numWorkers))
+    jobs = RemoteChannel(() -> Channel{Tuple{Int,Int,T1,Dict{String,Any}}}(numWorkers))
+    jobOutputs = RemoteChannel(() -> Channel{T2}(numWorkers))
 
     function makeJobs()
         for i = 1:batchSize:length(data)
@@ -101,14 +106,14 @@ function mapReduce(data::T2, batchSize::Int,
             put!(jobs, (i, iEnd, segment, globalStates))
         end
         for idxWorker = 1:numWorkers
-            put!(jobs, (0,0,T2(),Dict{String,Any}()))
+            put!(jobs, (0,0,T1(),Dict{String,Any}()))
         end
     end
 
     errormonitor(@async makeJobs())
     for p in workers()
         remote_do((jobs, jobOutputs) -> begin
-            localResult::Vector{T3} = Vector{T3}()
+            localResult::Vector{T2} = Vector{T2}()
             job = take!(jobs)
             while length(job[3]) > 0
                 push!(localResult, mapFun(job[1], job[2], job[3], job[4]))
@@ -118,7 +123,7 @@ function mapReduce(data::T2, batchSize::Int,
         end, p, jobs, jobOutputs)
     end
 
-    localResults = T3[outData0]
+    localResults = T2[outData0]
     for idxWorker = 1:numWorkers
         push!(localResults, take!(jobOutputs))
     end

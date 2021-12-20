@@ -38,10 +38,10 @@ using WJFParallelTask
     for i = 2:length(a)
         aResult[i] = aResult[i-1] + a[i]
     end
-    @time b = mapPrefix(a, 1000, mapFun, blockPrefixFun)
+    @time b = mapPrefix(a, 1000, mapFun, blockPrefixFun, 0.0)
     err = sum(abs.(aResult .- b))
     println("err = $err")
-    @time b1 = mapPrefix(a, 1000, mapFun1, blockPrefixFun, copyData=true)
+    @time b1 = mapPrefix(a, 1000, mapFun1, blockPrefixFun, 0.0, copyData=true)
     err1 = sum(abs.(aResult .- b1))
     println("err1 = $err1")
     @time c = mapReduce(a, 1000, mapFun2, reduceFun, 0.0)
