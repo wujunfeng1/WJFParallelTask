@@ -26,7 +26,10 @@ function mapPrefix(
             push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
         end # job
         put!(jobOutputs, localResult)
-        sleep(0.001)
+        #sleep(0.001)
+        for i in 1:iCPU
+            yield()
+        end
     end # runJob
 
     bind(jobs, @async makeJobs())
@@ -79,7 +82,10 @@ function mapReduce(
             push!(localResult, mapFun(job[1], job[2]))
         end # job
         put!(jobOutputs, reduceFun(localResult))
-        sleep(0.001)
+        #sleep(0.001)
+        for i in 1:iCPU
+            yield()
+        end
     end # runJob
 
     bind(jobs, @async makeJobs())
@@ -120,7 +126,10 @@ function mapOnly(
             mapFun(job[1], job[2])
         end # job
         put!(jobOutputs, true)
-        sleep(0.001)
+        #sleep(0.001)
+        for i in 1:iCPU
+            yield()
+        end
     end # runJob
 
     bind(jobs, @async makeJobs())

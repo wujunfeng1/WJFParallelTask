@@ -23,23 +23,26 @@ using Test
      function reduceFun(xs::Vector{Float64})
          return sum(xs)
      end
-     b = WJFParallelTask.mapPrefix(
-         1,length(a),10, mapFun, blockPrefixFun, Float64[10])
-     c = WJFParallelTask.mapReduce(
-         1,length(a),10, mapFun2, reduceFun, 10.0
-     )
-     aResult = Vector{Float64}(undef, length(a) + 1)
-     aResult[1] = 10
-     function loopBody(i1, i2)
-         for i = i1:i2
-             aResult[i + 1] = aResult[1] + sum(1:i)
+     for round = 1:1000
+         b = WJFParallelTask.mapPrefix(
+             1,length(a),10, mapFun, blockPrefixFun, Float64[10])
+         c = WJFParallelTask.mapReduce(
+             1,length(a),10, mapFun2, reduceFun, 10.0
+         )
+         aResult = Vector{Float64}(undef, length(a) + 1)
+         aResult[1] = 10
+         function loopBody(i1, i2)
+             for i = i1:i2
+                 aResult[i + 1] = aResult[1] + sum(1:i)
+             end
          end
+         WJFParallelTask.mapOnly(
+             1,length(a),10,loopBody
+         )
+         err = sum(abs.(aResult .- b))
+         println("round = $round, err = $err")
+         @test err ≈ 0
+         @test c ≈ aResult[end]
      end
-     WJFParallelTask.mapOnly(
-         1,length(a),10,loopBody
-     )
-     err = sum(abs.(aResult .- b))
-     println("err = $err")
-     @test err ≈ 0
-     @test c ≈ aResult[end]
+
  end
