@@ -10,7 +10,7 @@ function mapPrefix(
     initialResult::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Vector}
-    numCPUs = 2 * length(Sys.cpu_info())
+    numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{Vector{Tuple{T1,T1,T2}}}(numCPUs)
 
@@ -26,8 +26,8 @@ function mapPrefix(
             push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
         end # job
         put!(jobOutputs, localResult)
-        #sleep(0.001)
-        for i in 1:iCPU
+        numYields = iCPU+rand(Int)%10
+        for i in 1:numYields
             yield()
         end
     end # runJob
@@ -66,7 +66,7 @@ function mapReduce(
     x0::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Any}
-    numCPUs = 2 * length(Sys.cpu_info())
+    numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{T2}(numCPUs)
 
@@ -82,8 +82,8 @@ function mapReduce(
             push!(localResult, mapFun(job[1], job[2]))
         end # job
         put!(jobOutputs, reduceFun(localResult))
-        #sleep(0.001)
-        for i in 1:iCPU
+        numYields = iCPU+rand(Int)%10
+        for i in 1:numYields
             yield()
         end
     end # runJob
@@ -111,7 +111,7 @@ function mapOnly(
     mapFun::Function,
     parallel::Bool = true,
 ) where {T1<:Integer}
-    numCPUs = 2 * length(Sys.cpu_info())
+    numCPUs = length(Sys.cpu_info())
     jobs = Channel{Tuple{T1,T1}}(numCPUs)
     jobOutputs = Channel{Bool}(numCPUs)
 
@@ -126,8 +126,8 @@ function mapOnly(
             mapFun(job[1], job[2])
         end # job
         put!(jobOutputs, true)
-        #sleep(0.001)
-        for i in 1:iCPU
+        numYields = iCPU+rand(Int)%10
+        for i in 1:numYields
             yield()
         end
     end # runJob
