@@ -91,7 +91,7 @@ function mapReduce(data::Vector{T1}, batchSize::Int,
     numWorkers = length(workers())
     jobs = if length(attachments) > 0
             RemoteChannel(() ->
-            Channel{Tuple{Int,Int,Vector{Tuple{T1,Any}},Dict{String,Any}}}(numWorkers))
+            Channel{Tuple{Int,Int,Vector{Tuple{T1,T3}},Dict{String,Any}}}(numWorkers))
         else
             RemoteChannel(() ->
             Channel{Tuple{Int,Int,Vector{T1},Dict{String,Any}}}(numWorkers))

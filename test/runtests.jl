@@ -24,11 +24,19 @@ using WJFParallelTask
         end
         return result
     end
-    @everywhere function mapFun2(i1, i2, segment::Vector{Float64}, globalStates::Dict{String,Any})
-        return sum(segment)
+    @everywhere function mapFun2(i1, i2, segment::Vector{Tuple{Float64,Float64}}, globalStates::Dict{String,Any})
+        result = 0.0
+        for item in segment
+            result += item[1]
+        end
+        return result
     end
-    @everywhere function mapFun3(i1, i2, data::Vector{Float64}, globalStates::Dict{String,Any})
-        return sum(data[i1:i2])
+    @everywhere function mapFun3(i1, i2, data::Vector{Tuple{Float64,Float64}}, globalStates::Dict{String,Any})
+        result = 0.0
+        for item in data[i1:i2]
+            result += item[1]
+        end
+        return result
     end
     function reduceFun(xs::Vector{Float64})
         return sum(xs)
@@ -44,8 +52,8 @@ using WJFParallelTask
     @time b1 = mapPrefix(a, 1000, mapFun1, blockPrefixFun, 0.0, copyData=true)
     err1 = sum(abs.(aResult .- b1))
     println("err1 = $err1")
-    @time c = mapReduce(a, 1000, mapFun2, reduceFun, 0.0)
-    @time c1 = mapReduce(a, 1000, mapFun3, reduceFun, 0.0, copyData=true)
+    @time c = mapReduce(a, 1000, mapFun2, reduceFun, 0.0, attachments=a)
+    @time c1 = mapReduce(a, 1000, mapFun3, reduceFun, 0.0, attachments=a, copyData=true)
     @test err ≈ 0
     @test err1 ≈ 0
     @test c ≈ aResult[end]
