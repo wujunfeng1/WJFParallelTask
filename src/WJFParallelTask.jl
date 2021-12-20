@@ -8,7 +8,7 @@ function mapPrefix(data::T1, batchSize::Int,
     globalStates::Dict{String,Any} = Dict{String,Any}(),
     attachments::Vector = [],
     copyData::Bool = false,
-    )::T2 where {T1<:Vector,T2<:Any}
+    )::Vector{T2} where {T1<:Vector,T2<:Any}
     if length(attachments) > 0
         @assert length(attachments) == length(data)
     end
