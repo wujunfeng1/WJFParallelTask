@@ -65,7 +65,7 @@ function mapPrefix(data::T1, batchSize::Int,
     result = T2[]
     for block in localResults
         if length(result) == 0
-            append!(result, blockPrefixFun(outputData0,block[3]))
+            append!(result, blockPrefixFun(outData0,block[3]))
         else
             append!(result, blockPrefixFun(result[end], block[3]))
         end
