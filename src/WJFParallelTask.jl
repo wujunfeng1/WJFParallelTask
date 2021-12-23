@@ -10,53 +10,67 @@ function mapPrefix(
     initialResult::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Vector}
-    numCPUs = length(Sys.cpu_info())
-    jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = Vector{Union{Vector{Tuple{T1,T1,T2}},Nothing}}(undef, numCPUs)
-    for i in 1:numCPUs
-        jobOutputs[i] = nothing
-    end
+    if parallel && Threads.threadid() == 1
+        numCPUs = length(Sys.cpu_info())
+        jobs = Channel{Tuple{T1,T1}}(numCPUs)
+        jobOutputs = Vector{Vector{Tuple{T1,T1,T2}}}(undef, numCPUs)
+        jobFlags = fill(false, numCPUs)
 
-    function makeJobs()
-        for i::T1 = loopStart:batchSize:loopEnd
-            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+        function makeJobs()
+            for i::T1 = loopStart:batchSize:loopEnd
+                put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+            end
         end
-    end
 
-    function runJob(iCPU::Int)
-        localResult::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
-        for job in jobs
-            push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
-        end # job
-        jobOutputs[iCPU] = localResult
-    end # runJob
-
-    bind(jobs, @async makeJobs())
-    for iCPU = 1:numCPUs
-        if parallel
-            Threads.@spawn runJob(iCPU)
-        else
-            runJob(iCPU)
-        end
-    end
-
-    localResults::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
-    for iCPU = 1:numCPUs
-        while jobOutputs[iCPU] == nothing
+        function runJob(iCPU::Int)
+            localResult::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
+            for job in jobs
+                push!(localResult, (job[1], job[2], mapFun(job[1], job[2])))
+            end # job
+            jobOutputs[iCPU] = localResult
             yield()
+            jobFlags[iCPU] = true
+        end # runJob
+
+        bind(jobs, @async makeJobs())
+        begin
+            for iCPU = 1:numCPUs
+                Threads.@spawn runJob(iCPU)
+            end
+
+            localResults::Vector{Tuple{T1,T1,T2}} = Vector{Tuple{T1,T1,T2}}()
+            cpus = Set(iCPU for iCPU = 1:numCPUs)
+            while length(cpus) > 0
+                iCPU = rand(cpus)
+                if jobFlags[iCPU] == false
+                    yield()
+                else
+                    append!(localResults, jobOutputs[iCPU])
+                    delete!(cpus, iCPU)
+                end
+            end
+            sort!(localResults, by = x -> x[1])
+
+            result = copy(initialResult)
+            for block in localResults
+                if length(result) == 0
+                    append!(result, block[3])
+                else
+                    append!(result, blockPrefixFun(result[end], block[3]))
+                end
+            end
         end
-        append!(localResults, jobOutputs[iCPU])
-    end
-    sort!(localResults, by = x -> x[1])
-    result = initialResult
-    for block in localResults
-        if length(result) == 0
-            append!(result, block[3])
+        return result
+    else
+        if length(initialResult) == 0
+            return mapFun(loopStart, loopEnd)
         else
-            append!(result, blockPrefixFun(result[end], block[3]))
+            result = copy(initialResult)
+            append!(result,
+                blockPrefixFun(result[end], mapFun(loopStart, loopEnd)))
+            return result
         end
     end
-    return result
 end
 
 function mapReduce(
@@ -68,44 +82,53 @@ function mapReduce(
     x0::T2,
     parallel::Bool = true,
 )::T2 where {T1<:Integer,T2<:Any}
-    numCPUs = length(Sys.cpu_info())
-    jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = Vector{Union{T2,Nothing}}(undef, numCPUs)
-    for i in 1:numCPUs
-        jobOutputs[i] = nothing
-    end
+    if parallel && Threads.threadid() == 1
+        numCPUs = length(Sys.cpu_info())
+        jobs = Channel{Tuple{T1,T1}}(numCPUs)
+        jobOutputs = Vector{T2}(undef, numCPUs)
+        jobFlags = fill(false, numCPUs)
 
-    function makeJobs()
-        for i::T1 = loopStart:batchSize:loopEnd
-            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+        function makeJobs()
+            for i::T1 = loopStart:batchSize:loopEnd
+                put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+            end
         end
-    end
 
-    function runJob(iCPU::Int)
-        localResult::Vector{T2} = Vector{T2}()
-        for job in jobs
-            push!(localResult, mapFun(job[1], job[2]))
-        end # job
-        jobOutputs[iCPU] = reduceFun(localResult)
-    end # runJob
-
-    bind(jobs, @async makeJobs())
-    for iCPU = 1:numCPUs
-        if parallel
-            Threads.@spawn runJob(iCPU)
-        else
-            runJob(iCPU)
-        end
-    end
-
-    localResults = T2[x0]
-    for iCPU = 1:numCPUs
-        while jobOutputs[iCPU] == nothing
+        function runJob(iCPU::Int)
+            localResult::Vector{T2} = Vector{T2}()
+            for job in jobs
+                push!(localResult, mapFun(job[1], job[2]))
+            end # job
+            myResult = reduceFun(localResult)
+            jobOutputs[iCPU] = myResult
             yield()
+            jobFlags[iCPU] = true
+        end # runJob
+
+        bind(jobs, @async makeJobs())
+        begin
+            for iCPU = 1:numCPUs
+                Threads.@spawn runJob(iCPU)
+            end
+
+            localResults = T2[x0]
+            cpus = Set(iCPU for iCPU = 1:numCPUs)
+            while length(cpus) > 0
+                iCPU = rand(cpus)
+                if jobFlags[iCPU] == false
+                    yield()
+                else
+                    push!(localResults, jobOutputs[iCPU])
+                    delete!(cpus, iCPU)
+                end
+            end
         end
-        push!(localResults, jobOutputs[iCPU])
+        return reduceFun(localResults)
+    else
+        localResults = T2[x0]
+        push!(localResults, mapFun(loopStart, loopEnd))
+        return reduceFun(localResults)
     end
-    return reduceFun(localResults)
 end
 
 function mapOnly(
@@ -115,36 +138,42 @@ function mapOnly(
     mapFun::Function,
     parallel::Bool = true,
 ) where {T1<:Integer}
-    numCPUs = length(Sys.cpu_info())
-    jobs = Channel{Tuple{T1,T1}}(numCPUs)
-    jobOutputs = fill(false, numCPUs)
+    if parallel && Threads.threadid() == 1
+        numCPUs = length(Sys.cpu_info())
+        jobs = Channel{Tuple{T1,T1}}(numCPUs)
+        jobFlags = fill(false, numCPUs)
 
-    function makeJobs()
-        for i::T1 = loopStart:batchSize:loopEnd
-            put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+        function makeJobs()
+            for i::T1 = loopStart:batchSize:loopEnd
+                put!(jobs, (i, min(i + batchSize - 1, loopEnd)))
+            end
         end
-    end
 
-    function runJob(iCPU::Int)
-        for job in jobs
-            mapFun(job[1], job[2])
-        end # job
-        jobOutputs[iCPU] = true
-    end # runJob
+        function runJob(iCPU::Int)
+            for job in jobs
+                mapFun(job[1], job[2])
+            end # job
+            jobFlags[iCPU] = true
+        end # runJob
 
-    bind(jobs, @async makeJobs())
-    for iCPU = 1:numCPUs
-        if parallel
-            Threads.@spawn runJob(iCPU)
-        else
-            runJob(iCPU)
+        bind(jobs, @async makeJobs())
+        begin
+            for iCPU = 1:numCPUs
+                Threads.@spawn runJob(iCPU)
+            end
+
+            cpus = Set(iCPU for iCPU = 1:numCPUs)
+            while length(cpus) > 0
+                iCPU = rand(cpus)
+                if jobFlags[iCPU] == false
+                    yield()
+                else
+                    delete!(cpus, iCPU)
+                end
+            end
         end
-    end
-
-    for iCPU = 1:numCPUs
-        while jobOutputs[iCPU] == false
-            yield()
-        end
+    else
+        mapFun(loopStart, loopEnd)
     end
 end
 

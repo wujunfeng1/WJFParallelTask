@@ -23,7 +23,7 @@ using Test
      function reduceFun(xs::Vector{Float64})
          return sum(xs)
      end
-     for round = 1:1000
+     for round = 1:3000
          b = WJFParallelTask.mapPrefix(
              1,length(a),10, mapFun, blockPrefixFun, Float64[10])
          c = WJFParallelTask.mapReduce(
@@ -40,7 +40,9 @@ using Test
              1,length(a),10,loopBody
          )
          err = sum(abs.(aResult .- b))
-         println("round = $round, err = $err")
+         if round % 100 == 0
+             println("round = $round, err = $err, c = $c")
+         end
          @test err ≈ 0
          @test c ≈ aResult[end]
      end
